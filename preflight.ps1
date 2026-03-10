@@ -182,7 +182,7 @@ function Test-InternetConnectivity {
     $hosts = @('google.com', 'github.com', 'raw.githubusercontent.com')
     foreach ($h in $hosts) {
         if (-not (Test-Connection $h -Quiet -Count 1)) {
-            return "Cannot reach $h — check network settings"
+            return "Cannot reach $h - check network settings"
         }
         try {
             $r = Invoke-WebRequest -Uri "https://$h" -UseBasicParsing -DisableKeepAlive -ErrorAction Stop
@@ -199,12 +199,12 @@ function Test-DefenderDisabled {
     try {
         $svc = Get-Service -Name WinDefend -ErrorAction SilentlyContinue
         if ($null -ne $svc -and $svc.Status -eq "Running") {
-            return "Windows Defender is running — disable via Group Policy before installing"
+            return "Windows Defender is running - disable via Group Policy before installing"
         }
         $tp = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Features" `
             -Name "TamperProtection" -ErrorAction Stop
         if ($tp.TamperProtection -eq 5) {
-            return "Tamper Protection is enabled — disable it and reboot before installing"
+            return "Tamper Protection is enabled - disable it and reboot before installing"
         }
     } catch {
         return "Unable to determine Defender / Tamper Protection status"
@@ -251,9 +251,9 @@ Write-Host ""
 Write-Host "============================================" -ForegroundColor Cyan
 
 if ($allMandatoryPassed -and $allChecksPassed) {
-    Write-Host "  All checks passed — ready to install!" -ForegroundColor Green
+    Write-Host "  All checks passed - ready to install!" -ForegroundColor Green
 } elseif ($allMandatoryPassed) {
-    Write-Host "  Mandatory checks passed — warnings present." -ForegroundColor Yellow
+    Write-Host "  Mandatory checks passed - warnings present." -ForegroundColor Yellow
     Write-Host "  Review warnings above before continuing." -ForegroundColor Yellow
 } else {
     Write-Host "  One or more MANDATORY checks failed." -ForegroundColor Red

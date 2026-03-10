@@ -69,6 +69,17 @@ param(
 $ErrorActionPreference = 'Continue'
 
 # ---------------------------------------------------------------------------
+# Encoding / version self-check
+# ---------------------------------------------------------------------------
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Warning "This script requires PowerShell 5.1 or later. Current version: $($PSVersionTable.PSVersion)"
+    exit 1
+}
+# Ensure console output uses UTF-8 so special characters render correctly
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$OutputEncoding             = [System.Text.UTF8Encoding]::new()
+
+# ---------------------------------------------------------------------------
 # Helper: require Administrator
 # ---------------------------------------------------------------------------
 function Assert-IsAdmin {
@@ -91,11 +102,11 @@ function Write-StepResult {
     )
     if ($success) {
         $msg = "  [ OK ] $label"
-        if ($detail) { $msg += " — $detail" }
+        if ($detail) { $msg += " - $detail" }
         Write-Host $msg -ForegroundColor Green
     } else {
         $msg = "  [WARN] $label"
-        if ($detail) { $msg += " — $detail" }
+        if ($detail) { $msg += " - $detail" }
         Write-Host $msg -ForegroundColor Yellow
     }
 }
@@ -141,7 +152,7 @@ function Set-FlareExecutionPolicy {
 }
 
 # ---------------------------------------------------------------------------
-# Step 2: Windows Defender — disable via Group Policy registry keys
+# Step 2: Windows Defender - disable via Group Policy registry keys
 # ---------------------------------------------------------------------------
 function Disable-WindowsDefender {
     $defBase   = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender"
@@ -204,7 +215,7 @@ function Disable-WindowsDefender {
             Set-Service   -Name WinDefend -StartupType Disabled -ErrorAction SilentlyContinue
             Write-StepResult "WinDefend service stopped and disabled" $true
         } else {
-            Write-StepResult "WinDefend service" $true "service not found — skipped"
+            Write-StepResult "WinDefend service" $true "service not found - skipped"
         }
     } catch {
         Write-StepResult "WinDefend service stop/disable" $false $_.Exception.Message
@@ -226,7 +237,7 @@ function Disable-TamperProtection {
             "If Tamper Protection is still on, toggle it off in Windows Security Center first, then re-run this script"
     } else {
         Write-StepResult "Tamper Protection registry key" $false `
-            "Could not write to $path — disable Tamper Protection manually in Windows Security Center"
+            "Could not write to $path - disable Tamper Protection manually in Windows Security Center"
     }
 }
 
@@ -254,7 +265,7 @@ function Disable-WindowsUpdate {
             $svc = Get-Service -Name $svcInfo.Name -ErrorAction SilentlyContinue
             if ($null -ne $svc) {
                 Stop-Service  -Name $svcInfo.Name -Force -ErrorAction SilentlyContinue
-                # WaaSMedicSvc is a protected service; Set-Service may fail — that is expected
+                # WaaSMedicSvc is a protected service; Set-Service may fail - that is expected
                 Set-Service   -Name $svcInfo.Name -StartupType Disabled -ErrorAction SilentlyContinue
                 Write-StepResult "$($svcInfo.Display) service stopped" $true
             }
