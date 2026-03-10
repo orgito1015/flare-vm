@@ -55,6 +55,15 @@
     .PARAMETER noChecks
         Switch parameter to skip validation checks (not recommended).
 
+    .PARAMETER installProfile
+        Install profile to use: Minimal, Standard, Full (default), or omit to be prompted.
+        Minimal  - Essential RE tools (~16 packages).
+        Standard - Common RE tools, recommended (~62 packages).
+        Full     - All packages, default (~130 packages).
+
+    .PARAMETER skipInstalled
+        Switch parameter to skip packages that are already installed (idempotent installs).
+
     .EXAMPLE
         .\install.ps1
 
@@ -90,7 +99,9 @@ param (
   [switch]$noWait,
   [switch]$noGui,
   [switch]$noReboots,
-  [switch]$noChecks
+  [switch]$noChecks,
+  [string]$installProfile = $null,
+  [switch]$skipInstalled
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -132,6 +143,91 @@ function Get-ConfigFile {
     }
 }
 
+# Write a timestamped entry to the install log file
+function Write-Log {
+    param (
+        [string]$message,
+        [string]$level = "INFO"
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$timestamp] [$level] $message"
+    try {
+        $logDir = Split-Path $script:logPath -Parent
+        if (-not (Test-Path $logDir)) {
+            New-Item -Path $logDir -ItemType Directory -Force | Out-Null
+        }
+        Add-Content -Path $script:logPath -Value $logEntry -Encoding UTF8
+    } catch {
+        # Silently continue if logging is unavailable
+    }
+}
+
+# Display a colour-coded installation summary and log the result
+function Show-InstallSummary {
+    param (
+        [string[]]$attempted,
+        [string[]]$failed,
+        [string[]]$skipped
+    )
+    $installedPkgs = $attempted | Where-Object { ($_ -notin $failed) -and ($_ -notin $skipped) }
+    Write-Host ""
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host " FLARE-VM Installation Summary" -ForegroundColor Cyan
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host " Installed : $($installedPkgs.Count)" -ForegroundColor Green
+    Write-Host " Failed    : $($failed.Count)" -ForegroundColor Red
+    Write-Host " Skipped   : $($skipped.Count)" -ForegroundColor Yellow
+    Write-Host "======================================" -ForegroundColor Cyan
+    if ($failed.Count -gt 0) {
+        Write-Host ""
+        Write-Host " Failed packages:" -ForegroundColor Red
+        foreach ($pkg in $failed) {
+            Write-Host "   [X] $pkg" -ForegroundColor Red
+        }
+        Write-Host ""
+        Write-Host " Retry a failed package with:" -ForegroundColor Yellow
+        Write-Host "   choco install -y <package_name>" -ForegroundColor Yellow
+    }
+    Write-Log "Install summary - Installed: $($installedPkgs.Count), Failed: $($failed.Count), Skipped: $($skipped.Count)"
+}
+
+# Create a plain-text README and a desktop shortcut pointing to it
+function New-FlareVMReadme {
+    param (
+        [string]$targetDesktopPath
+    )
+    $readmeContent = @"
+FLARE-VM Installation Complete
+================================
+Date   : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+Profile: $installProfile
+
+Tools directory   : $env:TOOL_LIST_DIR
+Raw tools         : $env:RAW_TOOLS_DIR
+Install log       : $script:logPath
+
+To update all tools run:
+    .\update-flarevm.ps1
+
+For issues visit:
+    https://github.com/mandiant/flare-vm
+"@
+    $readmePath = Join-Path $targetDesktopPath "FLARE-VM-README.txt"
+    try {
+        Set-Content -Path $readmePath -Value $readmeContent -Encoding UTF8
+        $wshShell = New-Object -ComObject WScript.Shell
+        $shortcut = $wshShell.CreateShortcut("$(Join-Path $targetDesktopPath 'FLARE-VM README.lnk')")
+        $shortcut.TargetPath = $readmePath
+        $shortcut.IconLocation = "shell32.dll,1"
+        $shortcut.Save()
+        Write-Host "[+] Desktop README shortcut created: $readmePath" -ForegroundColor Green
+        Write-Log "Desktop README shortcut created: $readmePath"
+    } catch {
+        Write-Host "`t[!] Failed to create README shortcut: $_" -ForegroundColor Yellow
+        Write-Log "Failed to create README shortcut: $_" -level "WARN"
+    }
+}
+
 # Set path to user's desktop
 $desktopPath = [Environment]::GetFolderPath("Desktop")
 Set-Location -Path $desktopPath -PassThru | Out-Null
@@ -140,6 +236,7 @@ Set-Location -Path $desktopPath -PassThru | Out-Null
 $script:checksPassed = $true
 $mandatoryChecksPassed = $true
 $exit_message = "Installation cannot continue."
+$script:logPath = "C:\flare-vm\install.log"
 
 ################################# Functions that conduct Pre-Install Checks #################################
 # Function to test the network stack. Ping/GET requests to the resource to ensure that network stack looks good for installation
@@ -284,6 +381,17 @@ function Test-Storage {
 	}
 }
 
+function Test-RAM {
+	try {
+		$ramGB = (Get-CimInstance -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum).Sum / 1GB
+		if ($ramGB -lt 4) {
+			return "Insufficient RAM: $([math]::Round($ramGB, 1)) GB detected. At least 4 GB is recommended"
+		}
+	} catch {
+		return "Unable to determine RAM capacity"
+	}
+}
+
 
 
 if ($noGui.IsPresent) {
@@ -352,6 +460,14 @@ if ($noGui.IsPresent) {
 			$script:checksPassed = $false
 		}
 
+		# Check if host has enough RAM
+		Write-Host "[+] Checking if host has enough RAM..."
+		$error_info = Test-RAM
+		if ($error_info) {
+			Write-Host "`t[!] $error_info" -ForegroundColor Yellow
+			$script:checksPassed = $false
+		}
+
 		# Internet connectivity checks
 		$error_info = Test-WebConnection 'google.com'
 		if ($error_info){
@@ -403,6 +519,24 @@ if ($noGui.IsPresent) {
 		if ($response -notin @("y","Y")) {
 			exit 1
 		}
+	}
+
+	# Interactive install profile selection (CLI mode only; skipped when $installProfile already set)
+	if ([string]::IsNullOrEmpty($installProfile)) {
+		Write-Host ""
+		Write-Host "[+] Select an install profile:" -ForegroundColor Cyan
+		Write-Host "    [1] Minimal  - Essential RE tools only  (~16 packages)"
+		Write-Host "    [2] Standard - Common RE tools           (~62 packages)"
+		Write-Host "    [3] Full     - All packages [default]   (~130 packages)"
+		Write-Host "[-] Enter choice (1-3, default=3): " -ForegroundColor Yellow -NoNewline
+		$profileChoice = Read-Host
+		switch ($profileChoice) {
+			"1" { $installProfile = "Minimal" }
+			"2" { $installProfile = "Standard" }
+			"3" { $installProfile = "Full" }
+			default { $installProfile = "Full" }
+		}
+		Write-Host "[+] Using install profile: $installProfile" -ForegroundColor Green
 	}
 
 }
@@ -1746,8 +1880,55 @@ if (-not $noGui.IsPresent) {
 		################################################################################
 }
 
+# Apply install profile: remove packages outside selected tier (CLI mode only; GUI lets user pick manually)
+if ($noGui.IsPresent -and (-not [string]::IsNullOrEmpty($installProfile)) -and $installProfile -ne "Full") {
+    Write-Host "[+] Applying install profile: $installProfile" -ForegroundColor Cyan
+    Write-Log "Applying install profile: $installProfile"
+    $profileLower = $installProfile.ToLower()
+    $packageNodes = $configXml.SelectNodes('//packages/package')
+    $removedCount = 0
+    foreach ($pkgNode in $packageNodes) {
+        $pkgProfile = $pkgNode.GetAttribute("profile")
+        if ([string]::IsNullOrEmpty($pkgProfile)) {
+            $pkgProfile = "full"
+        }
+        $shouldInclude = $false
+        switch ($profileLower) {
+            "minimal"  { $shouldInclude = ($pkgProfile -eq "minimal") }
+            "standard" { $shouldInclude = ($pkgProfile -in @("minimal", "standard")) }
+            default    { $shouldInclude = $true }
+        }
+        if (-not $shouldInclude) {
+            $pkgNode.ParentNode.RemoveChild($pkgNode) | Out-Null
+            $removedCount++
+        }
+    }
+    Write-Host "`t[+] Profile '$installProfile': removed $removedCount packages from install list" -ForegroundColor Green
+    Write-Log "Profile '$installProfile': removed $removedCount packages"
+}
+
+# Skip already-installed packages (idempotent re-runs)
+if ($skipInstalled.IsPresent) {
+    Write-Host "[+] Checking for already-installed packages to skip..." -ForegroundColor Cyan
+    Write-Log "Checking for already-installed packages"
+    $installedRaw = choco list --local-only -r 2>$null
+    $installedNames = $installedRaw | ForEach-Object { ($_ -split '\|')[0].ToLower() }
+    $packageNodes = $configXml.SelectNodes('//packages/package')
+    $skippedCount = 0
+    foreach ($pkgNode in $packageNodes) {
+        $pkgName = $pkgNode.GetAttribute("name")
+        if ($pkgName.ToLower() -in $installedNames) {
+            $pkgNode.ParentNode.RemoveChild($pkgNode) | Out-Null
+            $skippedCount++
+        }
+    }
+    Write-Host "`t[+] Skipped $skippedCount already-installed packages" -ForegroundColor Green
+    Write-Log "Skipped $skippedCount already-installed packages"
+}
+
 # Save the config file
 Write-Host "[+] Saving configuration file..."
+Write-Log "Saving configuration file to $configPath"
 $configXml.save($configPath)
 
 # Parse config and set initial environment variables
@@ -1835,10 +2016,24 @@ following command:
 
 # Begin the package install
 Write-Host "[+] Beginning install of configured packages..." -ForegroundColor Green
+Write-Log "Beginning install of configured packages (profile: $installProfile)"
 $PackageName = "installer.vm"
 if ($noPassword.IsPresent) {
     Install-BoxstarterPackage -packageName $PackageName
 } else {
     Install-BoxstarterPackage -packageName $PackageName -credential $credentials
 }
+
+# Post-install: generate summary from Chocolatey lib directories
+$failedPackages = @()
+$libBadPath = "${Env:ChocolateyInstall}\lib-bad"
+if (Test-Path $libBadPath) {
+    $failedPackages = Get-ChildItem -Path $libBadPath -Directory | Select-Object -ExpandProperty Name
+}
+$attemptedPackages = $configXml.config.packages.package.name
+Show-InstallSummary -attempted $attemptedPackages -failed $failedPackages -skipped @()
+
+# Create desktop README shortcut
+New-FlareVMReadme -targetDesktopPath $desktopPath
+Write-Host "[+] FLARE-VM installation complete. Log saved to: $script:logPath" -ForegroundColor Green
 
