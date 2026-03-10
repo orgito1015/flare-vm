@@ -11,11 +11,43 @@ The VM should satisfy the following requirements:
 
 * Windows ≥ 10
 * PowerShell ≥ 5
-* Disk capacity of at least 60 GB and memory of at least 2GB
+* Disk capacity of at least 60 GB and RAM of at least 4 GB
 * Usernames without spaces or other special characters
 * Internet connection
 * Tamper Protection and any Anti-Malware solution (e.g., Windows Defender) disabled, preferably via Group Policy
 * Windows Updates Disabled
+
+## Quick Install (one-liner)
+
+Open a PowerShell prompt **as Administrator** and run:
+
+```powershell
+Set-ExecutionPolicy Unrestricted -Force
+irm https://raw.githubusercontent.com/mandiant/flare-vm/main/install.ps1 -OutFile "$([Environment]::GetFolderPath('Desktop'))\install.ps1"
+Unblock-File "$([Environment]::GetFolderPath('Desktop'))\install.ps1"
+& "$([Environment]::GetFolderPath('Desktop'))\install.ps1"
+```
+
+## Install Profiles
+
+FLARE-VM supports three install profiles that let you control how many tools are installed:
+
+| Profile  | Packages | Description |
+|----------|----------|-------------|
+| Minimal  | ~16      | Essential tools: debugger, disassembler, hex editor, network simulator, string extractor |
+| Standard | ~62      | Common RE toolkit: all Minimal tools plus decompilers, .NET tools, and network analysis |
+| Full     | ~130     | Everything in the repository (default) |
+
+Select a profile interactively (CLI mode):
+```powershell
+.\install.ps1 -noGui -noWait
+# → prompted: [1] Minimal  [2] Standard  [3] Full
+```
+
+Or pass it directly:
+```powershell
+.\install.ps1 -noGui -noWait -installProfile Standard
+```
 
 ## Installation instruction
 This section documents the steps to install FLARE-VM. You may also find useful the [_Building a VM for Reverse Engineering and Malware Analysis! Installing the FLARE-VM_ video](https://www.youtube.com/watch?v=i8dCyy8WMKY).
@@ -78,9 +110,36 @@ PARAMETERS
 
     -noChecks [<SwitchParameter>]
         Switch parameter to skip validation checks (not recommended).
+
+    -installProfile <String>
+        Install profile: Minimal, Standard, or Full (default).
+        In CLI mode (-noGui) the installer prompts for a profile if this is not set.
+
+    -skipInstalled [<SwitchParameter>]
+        Skip packages that are already installed (idempotent re-runs).
 ```
 
 Get full usage information by running `Get-Help .\install.ps1 -Detailed`.
+
+#### Pre-installation Checks
+
+Run the standalone pre-flight checker before starting the installer to verify all requirements:
+
+```powershell
+.\preflight.ps1
+```
+
+This checks administrator privileges, PowerShell version, disk space, RAM, internet connectivity, and more.
+
+#### Updating FLARE-VM
+
+After installation, keep all tools up to date with the included update script:
+
+```powershell
+.\update-flarevm.ps1
+```
+
+The script upgrades every installed package and displays a summary of upgraded / already-current / failed packages.
 
 #### Installer GUI
 
