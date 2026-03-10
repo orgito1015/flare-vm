@@ -55,14 +55,42 @@ This section documents the steps to install FLARE-VM. You may also find useful t
 ### Pre-installation
 * Prepare a Windows 10+ virtual machine
   * Install Windows in the virtual machine, for example using the raw Windows 10 ISO from https://www.microsoft.com/en-us/software-download/windows10ISO
-  * Ensure the [requirements above](#requirements) are satisfied, including:
-    * Disable Windows Updates (at least until installation is finished)
-      * https://www.windowscentral.com/how-stop-updates-installing-automatically-windows-10
-    * Disable Tamper Protection and any Anti-Malware solution (e.g., Windows Defender), preferably via Group Policy.
-      * GPO: [https://stackoverflow.com/questions/62174426/how-to-permanently-disable-windows-defender-real-time-protection-with-gpo](https://superuser.com/a/1757341)
-      * Non-GPO - Manual: [https://www.maketecheasier.com/permanently-disable-windows-defender-windows-10/](https://www.maketecheasier.com/permanently-disable-windows-defender-windows-10)
-      * Non-GPO - Automated: [https://github.com/ionuttbara/windows-defender-remover](https://github.com/ionuttbara/windows-defender-remover)
-      * Non-GPO - Semi-Automated (User needs to toggle off Tamper Protection): [https://github.com/AveYo/LeanAndMean/blob/main/ToggleDefender.ps1](https://github.com/AveYo/LeanAndMean/blob/main/ToggleDefender.ps1)
+  * Ensure the [requirements above](#requirements) are satisfied. The included [`prepare-flarevm.ps1`](#automated-preparation-prepare-flarevm) script automates most of these steps.
+
+#### Automated Preparation (`prepare-flarevm.ps1`)
+
+Run the included preparation script **as Administrator** inside your VM to disable all settings that would block the FLARE-VM installation:
+
+```powershell
+.\prepare-flarevm.ps1
+```
+
+The script performs the following steps automatically:
+
+| Step | What it does |
+|------|-------------|
+| Execution policy | Sets `Unrestricted` for `LocalMachine` (falls back to `CurrentUser`) |
+| Tamper Protection | Sets the registry key to disabled (`4`) — see note below |
+| Windows Defender | Disables real-time protection, behavior monitoring, cloud protection, sample submission, MAPS, and all Defender scheduled tasks via Group Policy registry keys; stops and disables the `WinDefend` service |
+| Windows Updates | Sets Group Policy registry keys to stop automatic updates; stops and disables `wuauserv`, `UsoSvc`, and `WaaSMedicSvc` |
+| Windows Firewall | Disables all network profiles (Domain, Public, Private) |
+| UAC | Disables User Account Control prompts (requires reboot) |
+| Auto-reboot | Disables automatic reboot on system failure |
+
+> **Tamper Protection note:** Windows does not allow disabling Tamper Protection purely via the registry while it is enabled. If Tamper Protection is still on, toggle it off manually in **Windows Security Center → Virus & threat protection settings → Tamper Protection**, then re-run `prepare-flarevm.ps1`.
+
+After the script completes:
+1. Reboot the VM so that UAC, Defender policy, and Windows Update changes take full effect.
+2. Run `preflight.ps1` to confirm all requirements pass.
+3. Run `install.ps1` to start the FLARE-VM installation.
+
+For manual or Group Policy-based approaches, see:
+  * Disable Tamper Protection manually: [https://www.maketecheasier.com/permanently-disable-windows-defender-windows-10/](https://www.maketecheasier.com/permanently-disable-windows-defender-windows-10)
+  * Via GPO: [https://superuser.com/a/1757341](https://superuser.com/a/1757341)
+  * Automated remover: [https://github.com/ionuttbara/windows-defender-remover](https://github.com/ionuttbara/windows-defender-remover)
+  * Semi-automated (requires manual Tamper Protection toggle): [https://github.com/AveYo/LeanAndMean/blob/main/ToggleDefender.ps1](https://github.com/AveYo/LeanAndMean/blob/main/ToggleDefender.ps1)
+  * Disable Windows Updates: https://www.windowscentral.com/how-stop-updates-installing-automatically-windows-10
+
 * Take a VM snapshot so you can always revert to a state before the FLARE-VM installation
 * NOTE for IDA Pro: If you are installing IDA Pro via `idapro.vm`, you must place your IDA Pro installer (and optionally, your license file) on the Desktop before running the FLARE-VM installer.
 
