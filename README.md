@@ -226,7 +226,31 @@ If your installation fails, please attempt to identify the reason for the instal
 
 Ensure you are running the latest version of the FLARE-VM installer and that your VM satisfies the [requirements](#requirements).
 
-### Installer Error
+### Parser Errors / Garbled Characters (â€" / â€œ)
+
+If you see errors like `Unexpected token 'â€" $detail"'`, `The Try statement is missing its Catch or Finally block`, or `Missing closing '}'` when running `prepare-flarevm.ps1`, the file was decoded with the wrong character encoding (UTF-8 bytes read as Windows-1252).
+
+This can happen if the script was downloaded as a ZIP and the file was re-encoded, or if an older version of the script containing Unicode characters (em dashes) was used.
+
+**Fix: unblock and re-run from a fresh clone or download**
+
+```powershell
+# Unblock the script (removes Mark-of-the-Web)
+Unblock-File .\prepare-flarevm.ps1
+
+# Set execution policy and run
+Set-ExecutionPolicy Bypass -Scope Process -Force
+.\prepare-flarevm.ps1
+```
+
+If the problem persists, verify you have the latest version of the script (which uses only ASCII characters) by re-cloning or re-downloading the repository.
+
+**Note on PowerShell execution policy:** If you see `cannot be loaded because running scripts is disabled on this system`, run:
+
+```powershell
+Set-ExecutionPolicy Unrestricted -Scope CurrentUser -Force
+```
+
 If the installation failed due to an issue in the installation script (e.g., `install.ps1`), [report the bug in FLARE-VM](https://github.com/mandiant/flare-vm/issues/new?labels=%3Abug%3A+bug&template=bug.yml).
 Provide all the information requested to ensure we are able to help you.
 
